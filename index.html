@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enhanced Heikin Ashi Crypto Trader - Fixed</title>
+  <title>Enhanced Heikin Ashi Crypto Trader</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -489,9 +489,9 @@
         <i class="fas fa-clock mr-2"></i>Select Timeframe
       </h3>
       <div class="flex flex-wrap justify-center gap-2">
-        <button class="btn-secondary timeframe-btn active" data-tf="1m">1m</button>
+        <button class="btn-secondary timeframe-btn" data-tf="1m">1m</button>
         <button class="btn-secondary timeframe-btn" data-tf="5m">5m</button>
-        <button class="btn-secondary timeframe-btn" data-tf="15m">15m</button>
+        <button class="btn-secondary timeframe-btn active" data-tf="15m">15m</button>
         <button class="btn-secondary timeframe-btn" data-tf="1h">1h</button>
         <button class="btn-secondary timeframe-btn" data-tf="4h">4h</button>
         <button class="btn-secondary timeframe-btn" data-tf="1d">1d</button>
@@ -636,10 +636,6 @@
     const MAX_CHART_DATA_ITEMS = 100;
     const ALERT_STORAGE_KEY = 'heikinAshiAlerts';
     const MAX_ALERTS = 100;
-    
-    // Alert rate limiting
-    let lastAlertTime = 0;
-    const ALERT_COOLDOWN = 30000; // 30 seconds
     
     // Theme Management
     function initializeTheme() {
@@ -841,14 +837,6 @@
       
       if (isDuplicate) return;
       
-      // Check if we're in cooldown period
-      if (now - lastAlertTime < ALERT_COOLDOWN) {
-        console.log('Alert suppressed due to rate limiting');
-        return;
-      }
-      
-      lastAlertTime = now;
-      
       const timestamp = Date.now();
       const alertObj = {
         type,
@@ -970,7 +958,7 @@
     
     // Chart management
     let activeCharts = {};
-    let currentTimeframe = '1m';
+    let currentTimeframe = '15m';
     let currentSymbol = 'BTCUSDT';
     
     const timeframeButtons = document.querySelectorAll('.timeframe-btn');
@@ -1096,146 +1084,74 @@
         wickDownColor: '#ef4444'
       });
       
+      const zoneSeries = chart.addLineSeries({
+        color: 'rgba(59, 130, 246, 0.3)',
+        lineWidth: 1,
+        priceLineVisible: false,
+        crossHairMarkerVisible: false
+      });
+      
       // Auto-resize chart
       const resizeObserver = new ResizeObserver(() => {
         chart.applyOptions({ width: chartEl.clientWidth });
       });
       resizeObserver.observe(chartEl);
       
-      return { chart, candleSeries, wrapper, resizeObserver, priceLines: [] };
+      return { chart, candleSeries, zoneSeries, wrapper, resizeObserver };
     }
     
-    // Fixed Support/Resistance zones implementation
-    function drawZones(candles, chartData) {
-      if (!chartData || !chartData.chart) return;
-      
+    // Support/Resistance zones
+    function drawZones(candles, zoneSeries) {
       try {
-        // Clear existing price lines first
-        if (chartData.priceLines && chartData.priceLines.length > 0) {
-          chartData.priceLines.forEach(priceLine => {
-            try {
-              chartData.candleSeries.removePriceLine(priceLine);
-            } catch (e) {
-              console.warn('Failed to remove price line:', e);
-            }
-          });
-          chartData.priceLines = [];
-        }
-        
         const levels = [];
-        const minCandleDistance = 5; // Minimum candles between levels
-        
-        // Enhanced support/resistance detection
-        for (let i = 3; i < candles.length - 3; i++) {
-          const curr = candles[i];
-          const prev3 = candles[i - 3];
+        for (let i = 2; i < candles.length - 2; i++) {
           const prev2 = candles[i - 2];
           const prev1 = candles[i - 1];
+          const curr = candles[i];
           const next1 = candles[i + 1];
           const next2 = candles[i + 2];
-          const next3 = candles[i + 3];
           
-          // Support level detection (local low)
-          if (curr.low <= prev3.low && curr.low <= prev2.low && 
-              curr.low <= prev1.low && curr.low <= next1.low && 
-              curr.low <= next2.low && curr.low <= next3.low) {
-            
-            // Check if this level is not too close to existing levels
-            const tooClose = levels.some(level => 
-              Math.abs(level.price - curr.low) < curr.low * 0.002 // 0.2% tolerance
-            );
-            
-            if (!tooClose) {
-              levels.push({ 
-                price: curr.low, 
-                type: 'support', 
-                strength: calculateLevelStrength(candles, i, curr.low, 'support'),
-                time: curr.time
-              });
-            }
+          // Support levels
+          if (prev1.low < prev2.low && prev1.low < curr.low && 
+              curr.low < next1.low && curr.low < next2.low) {
+            levels.push({ price: curr.low, type: 'support' });
           }
           
-          // Resistance level detection (local high)
-          if (curr.high >= prev3.high && curr.high >= prev2.high && 
-              curr.high >= prev1.high && curr.high >= next1.high && 
-              curr.high >= next2.high && curr.high >= next3.high) {
-            
-            // Check if this level is not too close to existing levels
-            const tooClose = levels.some(level => 
-              Math.abs(level.price - curr.high) < curr.high * 0.002 // 0.2% tolerance
-            );
-            
-            if (!tooClose) {
-              levels.push({ 
-                price: curr.high, 
-                type: 'resistance', 
-                strength: calculateLevelStrength(candles, i, curr.high, 'resistance'),
-                time: curr.time
-              });
-            }
+          // Resistance levels  
+          if (prev1.high > prev2.high && prev1.high > curr.high &&
+              curr.high > next1.high && curr.high > next2.high) {
+            levels.push({ price: curr.high, type: 'resistance' });
           }
         }
         
-        // Sort by strength and take the top levels
-        levels.sort((a, b) => b.strength - a.strength);
-        const topLevels = levels.slice(0, 8);
+        // Remove duplicate levels
+        const uniqueLevels = levels.filter((level, index, self) => 
+          index === self.findIndex(l => Math.abs(l.price - level.price) < level.price * 0.001)
+        );
         
-        // Draw price lines for the strongest levels
-        topLevels.forEach(level => {
-          try {
-            const priceLine = chartData.candleSeries.createPriceLine({
-              price: level.price,
-              color: level.type === 'support' ? 
-                'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)',
-              lineWidth: 2,
-              lineStyle: 1,
-              axisLabelVisible: true,
-              title: `${level.type.charAt(0).toUpperCase() + level.type.slice(1)} (${level.strength.toFixed(1)})`
-            });
-            
-            if (priceLine) {
-              chartData.priceLines.push(priceLine);
-            }
-          } catch (e) {
-            console.warn('Failed to create price line:', e);
-          }
+        // Clear existing price lines
+        if (zoneSeries._priceLines) {
+          zoneSeries._priceLines.forEach(pl => zoneSeries.removePriceLine(pl));
+          zoneSeries._priceLines = [];
+        } else {
+          zoneSeries._priceLines = [];
+        }
+        
+        // Draw zones
+        uniqueLevels.slice(0, 10).forEach(level => {
+          const pl = zoneSeries.createPriceLine({
+            price: level.price,
+            color: level.type === 'support' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+            lineWidth: 2,
+            lineStyle: 1,
+            axisLabelVisible: true,
+            title: level.type.charAt(0).toUpperCase() + level.type.slice(1)
+          });
+          zoneSeries._priceLines.push(pl);
         });
-        
       } catch (error) {
-        console.error('Failed to draw zones:', error);
+        console.warn('Failed to draw zones:', error);
       }
-    }
-    
-    // Calculate the strength of a support/resistance level
-    function calculateLevelStrength(candles, index, price, type) {
-      let strength = 1;
-      const tolerance = price * 0.003; // 0.3% tolerance
-      
-      // Check how many times price touched this level
-      for (let i = 0; i < candles.length; i++) {
-        if (i === index) continue;
-        
-        const candle = candles[i];
-        
-        if (type === 'support') {
-          if (Math.abs(candle.low - price) <= tolerance) {
-            strength += 1;
-          }
-        } else { // resistance
-          if (Math.abs(candle.high - price) <= tolerance) {
-            strength += 1;
-          }
-        }
-      }
-      
-      // Bonus for recent levels
-      const timeDiff = Date.now() - (candles[index].time * 1000);
-      const daysDiff = timeDiff / (1000 * 60 * 60 * 24);
-      if (daysDiff < 7) {
-        strength += 0.5;
-      }
-      
-      return strength;
     }
     
     // Pattern detection
@@ -1286,9 +1202,9 @@
                 
                 if (enableAlertsToggle.checked) {
                   if (trend === 'up' && dojiColor === 'red') {
-                    addAlert('sell', `${currentSymbol} ${timeframe}: Potential Bearish Reversal (Red Doji after uptrend)`, 'pattern-doji');
+                    addAlert('sell', `${currentSymbol} ${timeframe}: Potential Bearish Reversal (Red Doji after uptrend)`, 'doji');
                   } else if (trend === 'down' && dojiColor === 'green') {
-                    addAlert('buy', `${currentSymbol} ${timeframe}: Potential Bullish Reversal (Green Doji after downtrend)`, 'pattern-doji');
+                    addAlert('buy', `${currentSymbol} ${timeframe}: Potential Bullish Reversal (Green Doji after downtrend)`, 'doji');
                   }
                 }
               }
@@ -1320,9 +1236,9 @@
               
               if (enableAlertsToggle.checked) {
                 if (isUpperWickless && curr.close > curr.open) {
-                  addAlert('buy', `${currentSymbol} ${timeframe}: Strong Bullish Signal (First Upper Wickless Green Candle)`, 'pattern-wickless');
+                  addAlert('buy', `${currentSymbol} ${timeframe}: Strong Bullish Signal (First Upper Wickless Green Candle)`, 'wickless');
                 } else if (isLowerWickless && curr.close < curr.open) {
-                  addAlert('sell', `${currentSymbol} ${timeframe}: Strong Bearish Signal (First Lower Wickless Red Candle)`, 'pattern-wickless');
+                  addAlert('sell', `${currentSymbol} ${timeframe}: Strong Bearish Signal (First Lower Wickless Red Candle)`, 'wickless');
                 }
               }
             }
@@ -1348,9 +1264,9 @@
                 
                 if (enableAlertsToggle.checked) {
                   if (currColor === 'green') {
-                    addAlert('buy', `${currentSymbol} ${timeframe}: Trend Reversal - Bullish Signal`, 'pattern-reversal');
+                    addAlert('buy', `${currentSymbol} ${timeframe}: Trend Reversal - Bullish Signal`, 'reversal');
                   } else {
-                    addAlert('sell', `${currentSymbol} ${timeframe}: Trend Reversal - Bearish Signal`, 'pattern-reversal');
+                    addAlert('sell', `${currentSymbol} ${timeframe}: Trend Reversal - Bearish Signal`, 'reversal');
                   }
                 }
               }
@@ -1413,15 +1329,9 @@
             chartData.candleSeries.setMarkers(markers);
           }
           
-          // Show/hide zones based on selection
-          const showZones = selectedPatterns.includes('zones');
-          if (chartData.priceLines) {
-            chartData.priceLines.forEach(priceLine => {
-              try {
-                priceLine.applyOptions({ visible: showZones });
-              } catch (e) {
-                console.warn('Failed to toggle price line visibility:', e);
-              }
+          if (chartData.zoneSeries) {
+            chartData.zoneSeries.applyOptions({ 
+              visible: selectedPatterns.includes('zones') 
             });
           }
         });
@@ -1508,7 +1418,7 @@
       }
     }
     
-    // Chart loading with fixed price line updates
+    // Chart loading
     async function loadChart(timeframe) {
       try {
         loadingIndicator.style.display = 'block';
@@ -1522,8 +1432,7 @@
             dojiMarkers: [], 
             wicklessMarkers: [], 
             reversalMarkers: [], 
-            haCandles: [],
-            priceLines: []
+            haCandles: [] 
           };
         }
         
@@ -1538,21 +1447,9 @@
         const haCandles = convertToHeikinAshi(candles);
         chartData.haCandles = haCandles;
         
-        // Update chart data
+        // Update existing chart data instead of recreating
         chartData.candleSeries.setData(haCandles);
-        
-        // Update chart title with current price
-        const currentPrice = haCandles[haCandles.length - 1].close;
-        const titleElement = chartData.wrapper.querySelector('.absolute');
-        if (titleElement) {
-          titleElement.innerHTML = `
-            <i class="fab fa-bitcoin mr-2"></i>
-            ${currentSymbol} ${timeframe} Heikin Ashi - $${currentPrice.toFixed(2)}
-          `;
-        }
-        
-        // Draw support/resistance zones with proper price line management
-        drawZones(haCandles, chartData);
+        drawZones(haCandles, chartData.zoneSeries);
         
         // Detect patterns
         const patterns = detectHeikinAshiPatterns(haCandles, timeframe);
@@ -1687,16 +1584,6 @@
       Object.values(activeCharts).forEach(chartData => {
         if (chartData.resizeObserver) {
           chartData.resizeObserver.disconnect();
-        }
-        // Clean up price lines
-        if (chartData.priceLines) {
-          chartData.priceLines.forEach(pl => {
-            try {
-              chartData.candleSeries.removePriceLine(pl);
-            } catch (e) {
-              console.warn('Failed to remove price line on cleanup:', e);
-            }
-          });
         }
       });
     });
